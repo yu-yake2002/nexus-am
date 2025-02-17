@@ -66,7 +66,7 @@ void __am_init_16550(){
   outl(SERIAL_MMIO + IER, 0x00);
 
   outl(SERIAL_MMIO + LCR, 0x83); // enable DLAB
-	while (inl(SERIAL_MMIO + USR) & 0x1) ;
+	while (inl(SERIAL_MMIO + USR) & 0x1) {}
 
   outl(SERIAL_MMIO + DLH, 0x00); // 115200
   outl(SERIAL_MMIO + DLL, divisor); // 115200
