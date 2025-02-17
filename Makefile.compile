@@ -1,14 +1,31 @@
 $(shell mkdir -p $(DST_DIR))
 
+TOOLCHAIN ?= GNU
+
 OBJS      = $(addprefix $(DST_DIR)/, $(addsuffix .o, $(basename $(SRCS))))
-AS        = $(CROSS_COMPILE)gcc
-CC        = $(CROSS_COMPILE)gcc
-CXX       = $(CROSS_COMPILE)g++
-LD        = $(CROSS_COMPILE)ld
-AR        = $(CROSS_COMPILE)ar
-OBJDUMP   = $(CROSS_COMPILE)objdump
-OBJCOPY   = $(CROSS_COMPILE)objcopy
-READELF   = $(CROSS_COMPILE)readelf
+
+ifeq ($(TOOLCHAIN), GNU)
+  AS        = $(CROSS_COMPILE)gcc
+  CC        = $(CROSS_COMPILE)gcc
+  CXX       = $(CROSS_COMPILE)g++
+  LD        = $(CROSS_COMPILE)ld
+  AR        = $(CROSS_COMPILE)ar
+  OBJDUMP   = $(CROSS_COMPILE)objdump
+  OBJCOPY   = $(CROSS_COMPILE)objcopy
+  READELF   = $(CROSS_COMPILE)readelf
+else ifeq ($(TOOLCHAIN), LLVM)
+  AS        = $(LLVM_HOME)/bin/clang
+  CC        = $(LLVM_HOME)/bin/clang
+  CXX       = $(LLVM_HOME)/bin/clang++
+  LD        = $(LLVM_HOME)/bin/ld.lld
+  AR        = $(LLVM_HOME)/bin/llvm-ar
+  OBJDUMP   = $(LLVM_HOME)/bin/llvm-objdump
+  OBJCOPY   = $(LLVM_HOME)/bin/llvm-objcopy
+  READELF   = $(LLVM_HOME)/bin/llvm-readelf
+else
+  $(error TOOLCHAIN must be either 'GNU' or 'LLVM')
+endif
+
 INCLUDES += $(addprefix -I, $(INC_DIR)) -I$(AM_HOME)/am/
 INCLUDES += -I$(AM_HOME)/am/include
 CC_OPT	 ?= -O2
