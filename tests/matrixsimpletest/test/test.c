@@ -12,7 +12,15 @@ const int8_t ls_i8_src[8 * 8] = {
 int8_t i8_buffer[200];
 
 int main() {
-	printf("hello riscv matrix clang ==================== \n");
+	printf("hello riscv matrix clang ==================== \n"
+         "AME info:\n");
+  size_t cfg;
+  asm volatile("csrr %0, mlenb" : "=r"(cfg));
+  printf("mlenb:  %lu\n", cfg);
+  asm volatile("csrr %0, mrlenb" : "=r"(cfg));
+  printf("mrlenb: %lu\n", cfg);
+  asm volatile("csrr %0, mamul" : "=r"(cfg));
+  printf("mamul:  %lu\n", cfg);
 
   const size_t M = 8;
   const size_t K = 8;
