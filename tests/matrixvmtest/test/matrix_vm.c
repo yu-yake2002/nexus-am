@@ -1,6 +1,8 @@
-#include <riscv_matrix.h>
-#include <klib.h>
+#include "../isa/amtest.h"
+#include <csr.h>
+#include <xsextra.h>
 #include "../isa/utils.h"
+#include <riscv_matrix.h>
 
 const fp16_t srca[8 * 8] = {
   -0.4791228,  -5.50058298, -2.07270458, 5.3226858,   -8.84389546,
@@ -66,41 +68,112 @@ const fp16_t answ[8 * 8] = {
   114.06239061, 67.44158298,  -154.25685373, 163.0858631
 };
 
-int main() {
-  asm volatile (
-    "lui a0, 0x2002\n"
-    "addiw a0, a0, 512\n"
-    "csrs mstatus, a0"::
-  );
-  size_t cfg;
-  asm volatile("csrr %0, mlenb" : "=r"(cfg));
-  printf("mlenb:  %lu\n", cfg);
-  asm volatile("csrr %0, mrlenb" : "=r"(cfg));
-  printf("mrlenb: %lu\n", cfg);
-  asm volatile("csrr %0, mamul" : "=r"(cfg));
-  printf("mamul:  %lu\n", cfg);
+/*
+ * RISC-V 64 SV39 Virutal Memory test
+ */
+
+#define EXCEPTION_LOAD_ACCESS_FAULT 5
+#define EXCEPTION_STORE_ACCESS_FAULT 7
+#define EXCEPTION_LOAD_PAGE_FAULT 13
+#define EXCEPTION_STORE_PAGE_FAULT 15
+
+extern volatile uint64_t load_page_fault_to_be_reported;
+extern volatile uint64_t store_page_fault_to_be_reported;
+extern volatile uint64_t load_access_fault_to_be_reported;
+extern volatile uint64_t store_access_fault_to_be_reported;
+
+inline int inst_is_compressed(uint64_t addr){
+  uint8_t byte = *(uint8_t*)addr;
+  return (byte & 0x3) != 0x3;
+}
+
+extern _Context* store_page_fault_handler(_Event* ev, _Context *c);
+
+extern _Context* load_page_fault_handler(_Event* ev, _Context *c);
+
+extern _Context* load_access_fault_handler(_Event* ev, _Context *c);
+
+extern _Context* store_access_fault_handler(_Event* ev, _Context *c);
+
+extern void* sv39_pgalloc(size_t pg_size);
+
+extern void sv39_pgfree(void *ptr);
+
+extern _AddressSpace kas;
+#include <riscv.h>
+
+void matrix_sv39_test() {
+  printf("start sv39 test\n");
+  _vme_init(sv39_pgalloc, sv39_pgfree);
+  printf("sv39 setup done\n");
+#if defined(__ARCH_RISCV64_NOOP) || defined(__ARCH_RISCV32_NOOP) || defined(__ARCH_RISCV64_XS)
+  _map(&kas, (void *)0x900000000UL, (void *)0x80020000, PTE_R | PTE_A | PTE_D);
+  _map(&kas, (void *)0xa00000000UL, (void *)0x80020000, PTE_W | PTE_R | PTE_A | PTE_D);
+  _map(&kas, (void *)0xb00000000UL, (void *)0x80020000, PTE_A | PTE_D);
+  printf("memory map done\n");
+  fp16_t *w_ptr = (fp16_t *)(0xa00000000UL);
+  fp16_t *r_ptr = (fp16_t *)(0x900000000UL);
+  // fp16_t *fault_ptr = (fp16_t *)(0xb00000000UL);
+#elif defined(__ARCH_RISCV64_XS_SOUTHLAKE) || defined(__ARCH_RISCV64_XS_SOUTHLAKE_FLASH)
+  _map(&kas, (void *)0x2100000000UL, (void *)0x2000020000, PTE_W | PTE_R | PTE_A | PTE_D);
+  _map(&kas, (void *)0x2200000000UL, (void *)0x2000020000, PTE_R | PTE_A | PTE_D);
+  _map(&kas, (void *)0x2300000000UL, (void *)0x2000020000, PTE_A | PTE_D);
+  printf("memory map done\n");
+  fp16_t *w_ptr = (fp16_t *)(0x2100000000UL);
+  fp16_t *r_ptr = (fp16_t *)(0x2200000000UL);
+  fp16_t *fault_ptr = (fp16_t *)(0x2300000000UL);
+#else
+  // invalid arch
+  _halt(1);
+#endif
+  irq_handler_reg(EXCEPTION_STORE_PAGE_FAULT, &store_page_fault_handler);
+  irq_handler_reg(EXCEPTION_LOAD_PAGE_FAULT, &load_page_fault_handler);
+  asm volatile("sfence.vma");
+  printf("test sv39 data write\n");
+  for (int i = 0; i < 8 * 8; ++i) {
+    w_ptr[i] = srca[i];
+  }
+
+
+  printf("test sv39 data read\n");
+  for (int i = 0; i < 8 * 8; ++i) {
+    assert(r_ptr[i] == srca[i]);
+  }
 
   SET_MBA0_F16();
-  asm volatile("csrr %0, mtype" : "=r"(cfg));
-  printf("mtype:  %lu\n", cfg);
+  msettilem(8);
+  msettilek(8);
+  msettilen(8);
+  mfloat16_t ts1 = mla_m(r_ptr, 8 * sizeof(fp16_t));
+  mfloat16_t ts2 = mlb_m(r_ptr, 8 * sizeof(fp16_t));
+  mfloat16_t td  = mlc_m(r_ptr, 8 * sizeof(fp16_t));
+  mfloat16_t md  = mfma_mm(td, ts1, ts2);
+  msc_m(md, w_ptr, 8 * sizeof(fp16_t));
 
-  const size_t M = 8;
-  const size_t N = 8;
-  const size_t K = 8;
-  msettilem(M);
-  msettilek(K);
-  msettilen(N);
-  asm volatile("csrr %0, mtilem" : "=r"(cfg));
-  printf("mtilem: %lu\n", cfg);
-  asm volatile("csrr %0, mtilen" : "=r"(cfg));
-  printf("mtilen: %lu\n", cfg);
-  asm volatile("csrr %0, mtilek" : "=r"(cfg));
-  printf("mtilek: %lu\n", cfg);
-  mfloat16_t ts1 = mla_m(srca, K * sizeof(fp16_t));
-  mfloat16_t ts2 = mlb_m(srcb, N * sizeof(fp16_t));
-  mfloat16_t td = mlc_m(srcc, N * sizeof(fp16_t));
-  mfloat16_t md = mfma_mm(td, ts1, ts2);
-  msc_m(md, f16_buffer, N * sizeof(fp16_t));
+  // printf("test sv39 store page fault\n");
+  // store_page_fault_to_be_reported = 1;
+  // *fault_ptr = 'b';
+  // if(store_page_fault_to_be_reported){
+  //   printf("error @ access -1!\n");
+  //   _halt(1);
+  // }
+  // for (int i = 0; i < 8 * 8; ++i) {
+  //   store_page_fault_to_be_reported = 1;
+  //   fault_ptr[i] = srcb[i];
+  //   if(store_page_fault_to_be_reported){
+  //     printf("error @ access %d!\n", i);
+  //     _halt(1);
+  //   }
+  // }
 
-  return 0;
+  // printf("test sv39 load page fault\n");
+  // for (int i = 0; i < 8 * 8; ++i) {
+  //   load_page_fault_to_be_reported = 1;
+  //   w_ptr[i] = fault_ptr[i];
+  //   if(load_page_fault_to_be_reported){
+  //     _halt(1);
+  //   }
+  // }
+  
+  _halt(0);
 }
