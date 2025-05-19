@@ -103,52 +103,57 @@ extern _AddressSpace kas;
 #include <riscv.h>
 
 void matrix_sv39_test() {
+  asm volatile (
+    "lui a0, 0x2002\n"
+    "addiw a0, a0, 512\n"
+    "csrs mstatus, a0\n"
+    "csrs sstatus, a0\n"::
+  );
   printf("start sv39 test\n");
   _vme_init(sv39_pgalloc, sv39_pgfree);
   printf("sv39 setup done\n");
-#if defined(__ARCH_RISCV64_NOOP) || defined(__ARCH_RISCV32_NOOP) || defined(__ARCH_RISCV64_XS)
   _map(&kas, (void *)0x900000000UL, (void *)0x80020000, PTE_R | PTE_A | PTE_D);
+  _map(&kas, (void *)0x900010000UL, (void *)0x80030000, PTE_R | PTE_A | PTE_D);
+  _map(&kas, (void *)0x900020000UL, (void *)0x80040000, PTE_R | PTE_A | PTE_D);
   _map(&kas, (void *)0xa00000000UL, (void *)0x80020000, PTE_W | PTE_R | PTE_A | PTE_D);
+  _map(&kas, (void *)0xa00010000UL, (void *)0x80030000, PTE_W | PTE_R | PTE_A | PTE_D);
+  _map(&kas, (void *)0xa00020000UL, (void *)0x80040000, PTE_W | PTE_R | PTE_A | PTE_D);
   _map(&kas, (void *)0xb00000000UL, (void *)0x80020000, PTE_A | PTE_D);
   printf("memory map done\n");
-  fp16_t *w_ptr = (fp16_t *)(0xa00000000UL);
-  fp16_t *r_ptr = (fp16_t *)(0x900000000UL);
+  fp16_t *w_ptr_0 = (fp16_t *)(0xa00000000UL);
+  fp16_t *w_ptr_1 = (fp16_t *)(0xa00010000UL);
+  fp16_t *w_ptr_2 = (fp16_t *)(0xa00020000UL);
+  fp16_t *r_ptr_0 = (fp16_t *)(0x900000000UL);
+  fp16_t *r_ptr_1 = (fp16_t *)(0x900010000UL);
+  fp16_t *r_ptr_2 = (fp16_t *)(0x900020000UL);
   // fp16_t *fault_ptr = (fp16_t *)(0xb00000000UL);
-#elif defined(__ARCH_RISCV64_XS_SOUTHLAKE) || defined(__ARCH_RISCV64_XS_SOUTHLAKE_FLASH)
-  _map(&kas, (void *)0x2100000000UL, (void *)0x2000020000, PTE_W | PTE_R | PTE_A | PTE_D);
-  _map(&kas, (void *)0x2200000000UL, (void *)0x2000020000, PTE_R | PTE_A | PTE_D);
-  _map(&kas, (void *)0x2300000000UL, (void *)0x2000020000, PTE_A | PTE_D);
-  printf("memory map done\n");
-  fp16_t *w_ptr = (fp16_t *)(0x2100000000UL);
-  fp16_t *r_ptr = (fp16_t *)(0x2200000000UL);
-  fp16_t *fault_ptr = (fp16_t *)(0x2300000000UL);
-#else
-  // invalid arch
-  _halt(1);
-#endif
+
   irq_handler_reg(EXCEPTION_STORE_PAGE_FAULT, &store_page_fault_handler);
   irq_handler_reg(EXCEPTION_LOAD_PAGE_FAULT, &load_page_fault_handler);
   asm volatile("sfence.vma");
   printf("test sv39 data write\n");
   for (int i = 0; i < 8 * 8; ++i) {
-    w_ptr[i] = srca[i];
+    w_ptr_0[i] = srca[i];
+    w_ptr_1[i] = srcb[i];
+    w_ptr_2[i] = srcc[i];
   }
-
 
   printf("test sv39 data read\n");
   for (int i = 0; i < 8 * 8; ++i) {
-    assert(r_ptr[i] == srca[i]);
+    assert(r_ptr_0[i] == srca[i]);
+    assert(r_ptr_1[i] == srcb[i]);
+    assert(r_ptr_2[i] == srcc[i]);
   }
 
   SET_MBA0_F16();
   msettilem(8);
   msettilek(8);
   msettilen(8);
-  mfloat16_t ts1 = mla_m(r_ptr, 8 * sizeof(fp16_t));
-  mfloat16_t ts2 = mlb_m(r_ptr, 8 * sizeof(fp16_t));
-  mfloat16_t td  = mlc_m(r_ptr, 8 * sizeof(fp16_t));
+  mfloat16_t ts1 = mla_m(r_ptr_0, 8 * sizeof(fp16_t));
+  mfloat16_t ts2 = mlb_m(r_ptr_1, 8 * sizeof(fp16_t));
+  mfloat16_t td  = mlc_m(r_ptr_2, 8 * sizeof(fp16_t));
   mfloat16_t md  = mfma_mm(td, ts1, ts2);
-  msc_m(md, w_ptr, 8 * sizeof(fp16_t));
+  msc_m(md, w_ptr_0, 8 * sizeof(fp16_t));
 
   // printf("test sv39 store page fault\n");
   // store_page_fault_to_be_reported = 1;

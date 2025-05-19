@@ -18,12 +18,6 @@ _Context *simple_trap(_Event ev, _Context *ctx) {
 int main() {
   IOE;
   CTE(simple_trap);
-  asm volatile (
-    "lui a0, 0x2002\n"
-    "addiw a0, a0, 512\n"
-    "csrs mstatus, a0\n"
-    "csrs sstatus, a0\n"::
-  );
   // sv39_test();
   matrix_sv39_test();
   return 0;
